@@ -67,13 +67,44 @@ uv pip install flash-attn --no-build-isolation
 
 ### ROCm（AMD GPU）環境
 
-ROCm 版 PyTorch をインストールすることで、AMD GPU でも音声生成が可能です:
+AMD Radeon GPU（RX 7000 シリーズ等）でも ROCm 版 PyTorch をインストールすることで GPU を使用した音声生成が可能です。
+
+#### クイックインストール（PyTorch ホイール）
 
 ```bash
+uv sync
 uv pip install torch --index-url https://download.pytorch.org/whl/rocm6.3
 ```
 
-ROCm 版 PyTorch では `torch.cuda.is_available()` が `True` を返すため、コードの変更なしで自動的に GPU が使用されます。
+#### 動作の仕組み
+
+ROCm 版 PyTorch では `torch.cuda.is_available()` が `True` を返すため、CUDA 環境と同様にコードの変更なしで自動的に GPU が使用されます。
+
+#### GPU の認識確認
+
+インストール後、以下のコマンドで GPU が正しく認識されているか確認できます:
+
+```bash
+uv run python -c "import torch; print('GPU available:', torch.cuda.is_available()); print('Device:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A')"
+```
+
+#### ROCm 環境のセットアップ（詳細）
+
+ROCm を使用するには、事前に AMD GPU ドライバーと ROCm ランタイムのインストールが必要です。
+OS ごとの詳細な手順は AMD 公式ドキュメントを参照してください:
+
+- **Windows**: [Install PyTorch for Radeon GPUs (Windows)](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/windows/install-pytorch.html)
+  - Python 3.12、グラフィックスドライバー 26.1.1 以降が必要
+  - ROCm SDK のインストール後、AMD リポジトリから PyTorch をインストール
+- **Linux**: [Native Linux Installation Guide](https://rocm.docs.amd.com/projects/radeon-ryzen/en/latest/docs/install/installrad/native_linux/howto_native_linux.html)
+  - ROCm ドライバーおよびランタイムのインストール手順
+  - PyTorch、ONNX Runtime、TensorFlow 等のフレームワーク別セットアップ
+
+#### ヒント
+
+- FlashAttention 2 は ROCm 環境では利用できない場合があります。本アプリは自動的に SDPA（Scaled Dot-Product Attention）にフォールバックするため、問題なく動作します
+- GPU が認識されない場合は、`rocm-smi` コマンド（Linux）でドライバーの状態を確認してください
+- GPU を使わず CPU で動作させたい場合は `FORCE_CPU=1` 環境変数を設定してください（後述）
 
 ### CPU を強制する場合
 
