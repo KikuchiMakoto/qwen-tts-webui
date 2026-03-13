@@ -126,12 +126,33 @@ class TTSEngine:
         )
         return prompt_items
 
+    def _build_instruct_kwargs(self, instruct: str) -> dict:
+        """instructテキストからgenerate_voice_clone用のkwargsを構築する。
+
+        Args:
+            instruct: 指示テキスト（空文字列の場合は空dictを返す）
+
+        Returns:
+            instruct_ids を含む kwargs dict（instructが空の場合は空 dict）
+        """
+        if not instruct:
+            return {}
+        # チャットテンプレート用の特殊トークンをエスケープして誤動作を防ぐ
+        safe_instruct = instruct.replace("<|im_start|>", "").replace("<|im_end|>", "")
+        instruct_text = f"<|im_start|>user\n{safe_instruct}<|im_end|>\n"
+        inp = self._model.processor(text=instruct_text, return_tensors="pt", padding=True)
+        input_id = inp["input_ids"].to(self._model.device)
+        if input_id.dim() == 1:
+            input_id = input_id.unsqueeze(0)
+        return {"instruct_ids": [input_id]}
+
     def generate_speech(
         self,
         text: str,
         language: str,
         voice_clone_prompt,
         model_size: str = "1.7B",
+        instruct: str = "",
     ) -> tuple[np.ndarray, int]:
         """保存済みボイスクローンプロンプトを使用して音声を合成する。
 
@@ -140,15 +161,18 @@ class TTSEngine:
             language: 出力言語
             voice_clone_prompt: create_voice_prompt で作成したプロンプト
             model_size: 使用するモデルサイズ
+            instruct: 発音スタイル等の追加指示（省略可）
 
         Returns:
             (wav, sample_rate) タプル
         """
         self._ensure_model(model_size)
+        instruct_kwargs = self._build_instruct_kwargs(instruct)
         wavs, sr = self._model.generate_voice_clone(
             text=text,
             language=language,
             voice_clone_prompt=voice_clone_prompt,
+            **instruct_kwargs,
         )
         return wavs[0], sr
 
@@ -159,6 +183,7 @@ class TTSEngine:
         ref_audio,
         ref_text: str,
         model_size: str = "1.7B",
+        instruct: str = "",
     ) -> tuple[np.ndarray, int]:
         """リファレンス音声から直接音声を合成する（プロンプト未保存）。
 
@@ -168,16 +193,19 @@ class TTSEngine:
             ref_audio: リファレンス音声のファイルパス
             ref_text: リファレンス音声の文字起こし
             model_size: 使用するモデルサイズ
+            instruct: 発音スタイル等の追加指示（省略可）
 
         Returns:
             (wav, sample_rate) タプル
         """
         self._ensure_model(model_size)
+        instruct_kwargs = self._build_instruct_kwargs(instruct)
         wavs, sr = self._model.generate_voice_clone(
             text=text,
             language=language,
             ref_audio=ref_audio,
             ref_text=ref_text,
+            **instruct_kwargs,
         )
         return wavs[0], sr
 

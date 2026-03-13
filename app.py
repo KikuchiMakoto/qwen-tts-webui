@@ -287,6 +287,14 @@ elif mode == "音声合成":
                 f.write(uploaded_model.read())
                 voice_prompt = torch.load(f.name, weights_only=False)
 
+    tts_instruct = st.text_area(
+        "追加プロンプト（instruct）",
+        value="",
+        placeholder="例: ゆっくりと落ち着いた調子で読んでください",
+        key="tts_instruct",
+        help="発音スタイルや感情などの追加指示を入力してください。省略可。",
+    )
+
     st.divider()
 
     # チャットインターフェース
@@ -326,6 +334,7 @@ elif mode == "音声合成":
                         language=output_lang,
                         voice_clone_prompt=voice_prompt,
                         model_size=model_size,
+                        instruct=tts_instruct,
                     )
                 audio_bytes = audio_to_bytes(wav, sr)
                 msg_id = str(uuid.uuid4())
@@ -388,6 +397,13 @@ elif mode == "カスタム音声即時合成":
             index=0,
             key="instant_out_lang",
         )
+        instant_instruct = st.text_area(
+            "追加プロンプト（instruct）",
+            value="",
+            placeholder="例: ゆっくりと落ち着いた調子で読んでください",
+            key="instant_instruct",
+            help="発音スタイルや感情などの追加指示を入力してください。省略可。",
+        )
 
     st.divider()
 
@@ -430,6 +446,7 @@ elif mode == "カスタム音声即時合成":
                         ref_audio=audio_path,
                         ref_text=instant_ref_text,
                         model_size=model_size,
+                        instruct=instant_instruct,
                     )
                 audio_bytes = audio_to_bytes(wav, sr)
                 msg_id = str(uuid.uuid4())
