@@ -82,6 +82,47 @@ with st.sidebar:
 
     st.divider()
 
+    # 生成パラメータ設定（音声合成モードで使用）
+    with st.expander("生成パラメータ設定", expanded=False):
+        gen_temperature = st.slider(
+            "温度（感情値）",
+            min_value=0.30,
+            max_value=1.30,
+            value=0.65,
+            step=0.05,
+            key="gen_temperature",
+            help="感情の豊かさを制御します。高いほど表現豊かでランダムな発音、低いほど落ち着いた安定した発音になります。",
+        )
+        gen_top_p = st.slider(
+            "Top-p（核サンプリング）",
+            min_value=0.80,
+            max_value=1.00,
+            value=0.90,
+            step=0.05,
+            key="gen_top_p",
+            help="累積確率が上位p以内のトークンのみからサンプリングします。低いほど安定した出力になります。",
+        )
+        gen_top_k = st.slider(
+            "Top-k",
+            min_value=10,
+            max_value=50,
+            value=50,
+            step=1,
+            key="gen_top_k",
+            help="確率の高い上位k件のトークンのみからサンプリングします。低いほど安定した出力になります。",
+        )
+        gen_repetition_penalty = st.slider(
+            "繰り返し抑制（Repetition Penalty）",
+            min_value=1.00,
+            max_value=1.50,
+            value=1.15,
+            step=0.05,
+            key="gen_repetition_penalty",
+            help="同じ音やフレーズの繰り返しを抑制します。高いほど繰り返しが起きにくくなります。",
+        )
+
+    st.divider()
+
     # モードに応じた履歴クリアボタン
     if mode == "音声合成" and st.session_state.tts_history:
         if st.button("チャット履歴クリア", key="clear_tts"):
@@ -287,6 +328,14 @@ elif mode == "音声合成":
                 f.write(uploaded_model.read())
                 voice_prompt = torch.load(f.name, weights_only=False)
 
+    tts_instruct = st.text_area(
+        "追加プロンプト（instruct）",
+        value="",
+        placeholder="例: ゆっくりと落ち着いた調子で読んでください",
+        key="tts_instruct",
+        help="発音スタイルや感情などの追加指示を入力してください。省略可。",
+    )
+
     st.divider()
 
     # チャットインターフェース
@@ -326,6 +375,11 @@ elif mode == "音声合成":
                         language=output_lang,
                         voice_clone_prompt=voice_prompt,
                         model_size=model_size,
+                        instruct=tts_instruct,
+                        temperature=gen_temperature,
+                        repetition_penalty=gen_repetition_penalty,
+                        top_p=gen_top_p,
+                        top_k=gen_top_k,
                     )
                 audio_bytes = audio_to_bytes(wav, sr)
                 msg_id = str(uuid.uuid4())
@@ -388,6 +442,13 @@ elif mode == "カスタム音声即時合成":
             index=0,
             key="instant_out_lang",
         )
+        instant_instruct = st.text_area(
+            "追加プロンプト（instruct）",
+            value="",
+            placeholder="例: ゆっくりと落ち着いた調子で読んでください",
+            key="instant_instruct",
+            help="発音スタイルや感情などの追加指示を入力してください。省略可。",
+        )
 
     st.divider()
 
@@ -430,6 +491,11 @@ elif mode == "カスタム音声即時合成":
                         ref_audio=audio_path,
                         ref_text=instant_ref_text,
                         model_size=model_size,
+                        instruct=instant_instruct,
+                        temperature=gen_temperature,
+                        repetition_penalty=gen_repetition_penalty,
+                        top_p=gen_top_p,
+                        top_k=gen_top_k,
                     )
                 audio_bytes = audio_to_bytes(wav, sr)
                 msg_id = str(uuid.uuid4())
