@@ -153,6 +153,10 @@ class TTSEngine:
         voice_clone_prompt,
         model_size: str = "1.7B",
         instruct: str = "",
+        temperature: float = 0.65,
+        repetition_penalty: float = 1.15,
+        top_p: float = 0.9,
+        top_k: int = 50,
     ) -> tuple[np.ndarray, int]:
         """保存済みボイスクローンプロンプトを使用して音声を合成する。
 
@@ -162,6 +166,10 @@ class TTSEngine:
             voice_clone_prompt: create_voice_prompt で作成したプロンプト
             model_size: 使用するモデルサイズ
             instruct: 発音スタイル等の追加指示（省略可）
+            temperature: 感情値。高いほど表現豊か、低いほど安定した発音になる。
+            repetition_penalty: 繰り返し抑制係数。
+            top_p: 核サンプリングの累積確率閾値。
+            top_k: サンプリング候補数の上限。
 
         Returns:
             (wav, sample_rate) タプル
@@ -172,6 +180,10 @@ class TTSEngine:
             text=text,
             language=language,
             voice_clone_prompt=voice_clone_prompt,
+            temperature=temperature,
+            repetition_penalty=repetition_penalty,
+            top_p=top_p,
+            top_k=top_k,
             **instruct_kwargs,
         )
         return wavs[0], sr
@@ -184,6 +196,10 @@ class TTSEngine:
         ref_text: str,
         model_size: str = "1.7B",
         instruct: str = "",
+        temperature: float = 0.65,
+        repetition_penalty: float = 1.15,
+        top_p: float = 0.9,
+        top_k: int = 50,
     ) -> tuple[np.ndarray, int]:
         """リファレンス音声から直接音声を合成する（プロンプト未保存）。
 
@@ -194,6 +210,10 @@ class TTSEngine:
             ref_text: リファレンス音声の文字起こし
             model_size: 使用するモデルサイズ
             instruct: 発音スタイル等の追加指示（省略可）
+            temperature: 感情値。高いほど表現豊か、低いほど安定した発音になる。
+            repetition_penalty: 繰り返し抑制係数。
+            top_p: 核サンプリングの累積確率閾値。
+            top_k: サンプリング候補数の上限。
 
         Returns:
             (wav, sample_rate) タプル
@@ -205,6 +225,10 @@ class TTSEngine:
             language=language,
             ref_audio=ref_audio,
             ref_text=ref_text,
+            temperature=temperature,
+            repetition_penalty=repetition_penalty,
+            top_p=top_p,
+            top_k=top_k,
             **instruct_kwargs,
         )
         return wavs[0], sr
