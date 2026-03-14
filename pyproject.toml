@@ -10,6 +10,10 @@ dependencies = [
     "soundfile>=0.12.0",
     "numpy>=1.24.0",
     "torch>=2.0.0",
+    "rocm-sdk-core",
+    "rocm-sdk-devel",
+    "rocm-sdk-libraries-custom",
+    "rocm",
 ]
 
 [project.optional-dependencies]
@@ -19,8 +23,17 @@ flash-attn = ["flash-attn>=2.0.0"]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
 [tool.uv]
 dev-dependencies = []
+
+[tool.uv.sources]
+rocm-sdk-core = { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_core-7.2.0.dev0-py3-none-win_amd64.whl" }
+rocm-sdk-devel = { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_devel-7.2.0.dev0-py3-none-win_amd64.whl" }
+rocm-sdk-libraries-custom = { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm_sdk_libraries_custom-7.2.0.dev0-py3-none-win_amd64.whl" }
+rocm = { url = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2/rocm-7.2.0.dev0.tar.gz" }
 
 # CPU版PyTorchを使用する場合:
 #   uv sync --index-url https://download.pytorch.org/whl/cpu
