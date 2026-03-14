@@ -126,33 +126,12 @@ class TTSEngine:
         )
         return prompt_items
 
-    def _build_instruct_kwargs(self, instruct: str) -> dict:
-        """instructテキストからgenerate_voice_clone用のkwargsを構築する。
-
-        Args:
-            instruct: 指示テキスト（空文字列の場合は空dictを返す）
-
-        Returns:
-            instruct_ids を含む kwargs dict（instructが空の場合は空 dict）
-        """
-        if not instruct:
-            return {}
-        # チャットテンプレート用の特殊トークンをエスケープして誤動作を防ぐ
-        safe_instruct = instruct.replace("<|im_start|>", "").replace("<|im_end|>", "")
-        instruct_text = f"<|im_start|>user\n{safe_instruct}<|im_end|>\n"
-        inp = self._model.processor(text=instruct_text, return_tensors="pt", padding=True)
-        input_id = inp["input_ids"].to(self._model.device)
-        if input_id.dim() == 1:
-            input_id = input_id.unsqueeze(0)
-        return {"instruct_ids": [input_id]}
-
     def generate_speech(
         self,
         text: str,
         language: str,
         voice_clone_prompt,
         model_size: str = "1.7B",
-        instruct: str = "",
         temperature: float = 0.65,
         repetition_penalty: float = 1.15,
         top_p: float = 0.9,
@@ -165,7 +144,6 @@ class TTSEngine:
             language: 出力言語
             voice_clone_prompt: create_voice_prompt で作成したプロンプト
             model_size: 使用するモデルサイズ
-            instruct: 発音スタイル等の追加指示（省略可）
             temperature: 感情値。高いほど表現豊か、低いほど安定した発音になる。
             repetition_penalty: 繰り返し抑制係数。
             top_p: 核サンプリングの累積確率閾値。
@@ -175,7 +153,6 @@ class TTSEngine:
             (wav, sample_rate) タプル
         """
         self._ensure_model(model_size)
-        instruct_kwargs = self._build_instruct_kwargs(instruct)
         wavs, sr = self._model.generate_voice_clone(
             text=text,
             language=language,
@@ -184,7 +161,6 @@ class TTSEngine:
             repetition_penalty=repetition_penalty,
             top_p=top_p,
             top_k=top_k,
-            **instruct_kwargs,
         )
         return wavs[0], sr
 
@@ -195,7 +171,6 @@ class TTSEngine:
         ref_audio,
         ref_text: str,
         model_size: str = "1.7B",
-        instruct: str = "",
         temperature: float = 0.65,
         repetition_penalty: float = 1.15,
         top_p: float = 0.9,
@@ -209,7 +184,6 @@ class TTSEngine:
             ref_audio: リファレンス音声のファイルパス
             ref_text: リファレンス音声の文字起こし
             model_size: 使用するモデルサイズ
-            instruct: 発音スタイル等の追加指示（省略可）
             temperature: 感情値。高いほど表現豊か、低いほど安定した発音になる。
             repetition_penalty: 繰り返し抑制係数。
             top_p: 核サンプリングの累積確率閾値。
@@ -219,7 +193,6 @@ class TTSEngine:
             (wav, sample_rate) タプル
         """
         self._ensure_model(model_size)
-        instruct_kwargs = self._build_instruct_kwargs(instruct)
         wavs, sr = self._model.generate_voice_clone(
             text=text,
             language=language,
@@ -229,7 +202,6 @@ class TTSEngine:
             repetition_penalty=repetition_penalty,
             top_p=top_p,
             top_k=top_k,
-            **instruct_kwargs,
         )
         return wavs[0], sr
 

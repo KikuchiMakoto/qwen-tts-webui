@@ -73,9 +73,9 @@ with st.sidebar:
     mode = st.radio(
         "モード選択",
         [
-            "カスタムボイスモデル学習",
+            "オリジナルボイスモデル学習",
             "音声合成",
-            "カスタム音声即時合成",
+            "オリジナル音声即時合成",
         ],
         index=0,
     )
@@ -128,18 +128,18 @@ with st.sidebar:
         if st.button("チャット履歴クリア", key="clear_tts"):
             st.session_state.tts_history = []
             st.rerun()
-    elif mode == "カスタム音声即時合成" and st.session_state.instant_history:
+    elif mode == "オリジナル音声即時合成" and st.session_state.instant_history:
         if st.button("チャット履歴クリア", key="clear_instant"):
             st.session_state.instant_history = []
             st.rerun()
 
 
 # =============================================================================
-# モード1: カスタムボイスモデル学習
+# モード1: オリジナルボイスモデル学習
 # =============================================================================
-if mode == "カスタムボイスモデル学習":
-    st.header("カスタムボイスモデル学習")
-    st.markdown("リファレンス音声からカスタムボイスモデルを作成します。")
+if mode == "オリジナルボイスモデル学習":
+    st.header("オリジナルボイスモデル学習")
+    st.markdown("リファレンス音声からオリジナルボイスモデルを作成します。")
 
     col_create, col_saved = st.columns([3, 2])
 
@@ -315,7 +315,7 @@ elif mode == "音声合成":
         else:
             st.warning(
                 "保存されたボイスモデルがありません。"
-                "「カスタムボイスモデル学習」モードで先にモデルを作成してください。"
+                "「オリジナルボイスモデル学習」モードで先にモデルを作成してください。"
             )
     else:
         uploaded_model = st.file_uploader(
@@ -334,8 +334,6 @@ elif mode == "音声合成":
     for msg in st.session_state.tts_history:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-            if msg["role"] == "user" and msg.get("instruct"):
-                st.caption(f"追加プロンプト: {msg['instruct']}")
             if "audio" in msg:
                 st.audio(msg["audio"], format="audio/wav")
                 st.download_button(
@@ -346,14 +344,6 @@ elif mode == "音声合成":
                     key=f"dl_{msg['id']}",
                 )
 
-    tts_instruct = st.text_area(
-        "追加プロンプト（instruct）",
-        value="",
-        placeholder="例: ゆっくりと落ち着いた調子で読んでください",
-        key="tts_instruct",
-        help="発音スタイルや感情などの追加指示を入力してください。省略可。",
-    )
-
     if text_input := st.chat_input("合成するテキストを入力してください"):
         if voice_prompt is None:
             st.error("ボイスモデルを選択またはアップロードしてください。")
@@ -362,15 +352,12 @@ elif mode == "音声合成":
             user_msg = {
                 "role": "user",
                 "content": text_input,
-                "instruct": tts_instruct or None,
                 "id": str(uuid.uuid4()),
             }
             st.session_state.tts_history.append(user_msg)
 
             with st.chat_message("user"):
                 st.markdown(text_input)
-                if tts_instruct:
-                    st.caption(f"追加プロンプト: {tts_instruct}")
 
             # 音声生成
             with st.chat_message("assistant"):
@@ -380,7 +367,6 @@ elif mode == "音声合成":
                         language=output_lang,
                         voice_clone_prompt=voice_prompt,
                         model_size=model_size,
-                        instruct=tts_instruct,
                         temperature=gen_temperature,
                         repetition_penalty=gen_repetition_penalty,
                         top_p=gen_top_p,
@@ -409,10 +395,10 @@ elif mode == "音声合成":
 
 
 # =============================================================================
-# モード3: カスタム音声即時合成
+# モード3: オリジナル音声即時合成
 # =============================================================================
-elif mode == "カスタム音声即時合成":
-    st.header("カスタム音声即時合成")
+elif mode == "オリジナル音声即時合成":
+    st.header("オリジナル音声即時合成")
     st.markdown(
         "リファレンス音声から直接音声合成を行います。ボイスモデルはキャッシュされません。"
     )
@@ -454,8 +440,6 @@ elif mode == "カスタム音声即時合成":
     for msg in st.session_state.instant_history:
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
-            if msg["role"] == "user" and msg.get("instruct"):
-                st.caption(f"追加プロンプト: {msg['instruct']}")
             if "audio" in msg:
                 st.audio(msg["audio"], format="audio/wav")
                 st.download_button(
@@ -466,14 +450,6 @@ elif mode == "カスタム音声即時合成":
                     key=f"instant_dl_{msg['id']}",
                 )
 
-    instant_instruct = st.text_area(
-        "追加プロンプト（instruct）",
-        value="",
-        placeholder="例: ゆっくりと落ち着いた調子で読んでください",
-        key="instant_instruct",
-        help="発音スタイルや感情などの追加指示を入力してください。省略可。",
-    )
-
     if text_input := st.chat_input("合成するテキストを入力"):
         if not instant_audio or not instant_ref_text:
             st.error("リファレンス音声と文字起こしを入力してください。")
@@ -482,15 +458,12 @@ elif mode == "カスタム音声即時合成":
             user_msg = {
                 "role": "user",
                 "content": text_input,
-                "instruct": instant_instruct or None,
                 "id": str(uuid.uuid4()),
             }
             st.session_state.instant_history.append(user_msg)
 
             with st.chat_message("user"):
                 st.markdown(text_input)
-                if instant_instruct:
-                    st.caption(f"追加プロンプト: {instant_instruct}")
 
             # 音声生成
             with st.chat_message("assistant"):
@@ -502,7 +475,6 @@ elif mode == "カスタム音声即時合成":
                         ref_audio=audio_path,
                         ref_text=instant_ref_text,
                         model_size=model_size,
-                        instruct=instant_instruct,
                         temperature=gen_temperature,
                         repetition_penalty=gen_repetition_penalty,
                         top_p=gen_top_p,
