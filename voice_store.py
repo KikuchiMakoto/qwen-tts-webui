@@ -27,19 +27,21 @@ def _ensure_store(model_size: str):
     model_dir.mkdir(parents=True, exist_ok=True)
     metadata_file = _get_metadata_file(model_size)
     if not metadata_file.exists():
-        metadata_file.write_text("{}")
+        metadata_file.write_text("{}", encoding="utf-8")
 
 
 def _load_metadata(model_size: str) -> dict:
     _ensure_store(model_size)
     metadata_file = _get_metadata_file(model_size)
-    return json.loads(metadata_file.read_text())
+    return json.loads(metadata_file.read_text(encoding="utf-8"))
 
 
 def _save_metadata(model_size: str, metadata: dict):
     _ensure_store(model_size)
     metadata_file = _get_metadata_file(model_size)
-    metadata_file.write_text(json.dumps(metadata, ensure_ascii=False, indent=2))
+    metadata_file.write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 def _get_model_size_from_data(data: bytes) -> str | None:
