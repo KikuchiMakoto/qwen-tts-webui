@@ -44,6 +44,10 @@ cd qwen-tts-webui
 uv sync
 ```
 
+`uv sync` のデフォルト構成は **CPU 推論向け** です。
+`rocm` / `rocm-sdk-*` パッケージはデフォルトではインストールされません。
+GPU を使う場合のみ、以下の CUDA / ROCm セクションの手順を実行してください。
+
 ### GPU（CUDA）を使用する場合
 
 デフォルトでは CPU で動作しますが、CUDA 対応 GPU がある場合は自動的に GPU を使用します。
