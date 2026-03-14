@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import streamlit as st
+import streamlit.components.v1 as components
 import torch
 
 from engine import GREETINGS, SUPPORTED_LANGUAGES, TTSEngine
@@ -15,6 +16,7 @@ from voice_store import (
     export_voice,
     import_voice,
     list_voices,
+    list_voices_by_size,
     load_voice,
     remove_voice,
     save_voice,
@@ -43,6 +45,23 @@ def save_uploaded_audio(uploaded_file) -> str:
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
         f.write(uploaded_file.getvalue())
         return f.name
+
+
+def show_completion_notification(message: str = "完了しました！"):
+    """完了通知を表示する（Toast + 音声）."""
+    st.toast(message, icon="✅")
+    components.html(
+        """
+        <script>
+        const audio = new Audio('/static/notify.ogg');
+        audio.load();
+        audio.play().catch(() => {
+            console.log('音声再生がブロックされました');
+        });
+        </script>
+        """,
+        height=0,
+    )
 
 
 # --- セッション状態の初期化 ---
@@ -184,7 +203,9 @@ if mode == "オリジナルボイスモデル学習":
 
         if create_clicked:
             if not audio_file or not ref_text or not nickname:
-                st.error("音声ファイル、文字起こし、ニックネームをすべて入力してください。")
+                st.error(
+                    "音声ファイル、文字起こし、ニックネームをすべて入力してください。"
+                )
             else:
                 audio_path = save_uploaded_audio(audio_file)
                 with st.spinner("ボイスモデルを作成中..."):
@@ -195,6 +216,7 @@ if mode == "オリジナルボイスモデル学習":
                     )
                     save_voice(nickname, prompt_items, ref_lang, model_size)
                 st.success(f"ボイスモデル '{nickname}' を作成しました。")
+                show_completion_notification("ボイスモデル作成完了")
                 st.rerun()
 
         if preview_clicked:
@@ -216,14 +238,15 @@ if mode == "オリジナルボイスモデル学習":
                         model_size=model_size,
                     )
                 st.info(f"挨拶: {greeting}")
+                show_completion_notification("プレビュー完了")
                 st.audio(audio_to_bytes(wav, sr), format="audio/wav")
 
     with col_saved:
         st.subheader("保存済みモデル")
-        voices = list_voices()
+        voices = list_voices_by_size(model_size)
 
         if not voices:
-            st.info("保存されたボイスモデルはありません。")
+            st.info(f"保存されたボイスモデルはありません（{model_size}）。")
 
         for voice in voices:
             with st.container(border=True):
@@ -235,11 +258,13 @@ if mode == "オリジナルボイスモデル学習":
 
                 c1, c2 = st.columns(2)
                 with c1:
-                    data = export_voice(voice["nickname"])
+                    data, filename = export_voice(
+                        voice["nickname"], voice["model_size"]
+                    )
                     st.download_button(
                         "エクスポート",
                         data=data,
-                        file_name=f"{voice['nickname']}.pt",
+                        file_name=filename,
                         mime="application/octet-stream",
                         use_container_width=True,
                         key=f"export_{voice['nickname']}",
@@ -250,14 +275,14 @@ if mode == "オリジナルボイスモデル学習":
                         key=f"del_{voice['nickname']}",
                         use_container_width=True,
                     ):
-                        remove_voice(voice["nickname"])
+                        remove_voice(voice["nickname"], voice["model_size"])
                         st.rerun()
 
         st.divider()
         st.subheader("モデルインポート")
 
         import_file = st.file_uploader(
-            "ボイスモデルファイル (.pt)",
+            f"ボイスモデルファイル (.pt) - {model_size}向けのみ",
             type=["pt"],
             key="import_file",
         )
@@ -266,11 +291,14 @@ if mode == "オリジナルボイスモデル学習":
 
         if st.button("インポート", use_container_width=True):
             if import_file and import_nickname:
-                import_voice(
-                    import_nickname, import_file.read(), import_lang, model_size
-                )
-                st.success(f"'{import_nickname}' をインポートしました。")
-                st.rerun()
+                try:
+                    import_voice(
+                        import_nickname, import_file.read(), import_lang, model_size
+                    )
+                    st.success(f"'{import_nickname}' をインポートしました。")
+                    st.rerun()
+                except ValueError as e:
+                    st.error(f"インポート失敗: {e}")
             else:
                 st.error("ファイルとインポート名を入力してください。")
 
@@ -304,17 +332,17 @@ elif mode == "音声合成":
     voice_prompt = None
 
     if voice_source == "保存済みモデル":
-        voices = list_voices()
+        voices = list_voices_by_size(model_size)
         voice_options = [v["nickname"] for v in voices]
         if voice_options:
             selected_voice = st.selectbox(
                 "ボイスモデル", voice_options, key="tts_voice"
             )
             if selected_voice:
-                voice_prompt = load_voice(selected_voice)
+                voice_prompt = load_voice(selected_voice, model_size)
         else:
             st.warning(
-                "保存されたボイスモデルがありません。"
+                f"保存されたボイスモデルがありません（{model_size}）。"
                 "「オリジナルボイスモデル学習」モードで先にモデルを作成してください。"
             )
     else:
@@ -375,6 +403,7 @@ elif mode == "音声合成":
                 audio_bytes = audio_to_bytes(wav, sr)
                 msg_id = str(uuid.uuid4())
                 st.markdown("音声を生成しました")
+                show_completion_notification("音声合成完了")
                 st.audio(audio_bytes, format="audio/wav")
                 st.download_button(
                     "ダウンロード",

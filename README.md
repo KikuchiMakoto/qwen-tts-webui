@@ -165,3 +165,8 @@ qwen-tts-webui/
 ## ライセンス
 
 本プロジェクトは Qwen3-TTS モデルを使用しています。モデルの利用規約については [Qwen3-TTS リポジトリ](https://github.com/QwenLM/Qwen3-TTS) を参照してください。
+
+## クレジット
+
+### 効果音
+- 決定ボタン音: [Sound Effect Lab](https://soundeffect-lab.info/sound/button/) の「決定ボタンを押す48」を使用
