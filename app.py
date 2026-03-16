@@ -15,7 +15,6 @@ from engine import GREETINGS, SUPPORTED_LANGUAGES, TTSEngine
 from voice_store import (
     export_voice,
     import_voice,
-    list_voices,
     list_voices_by_size,
     load_voice,
     remove_voice,
@@ -95,6 +94,7 @@ with st.sidebar:
             "オリジナルボイスモデル学習",
             "音声合成",
             "オリジナル音声即時合成",
+            "音声合成WebAPI",
         ],
         index=0,
     )
@@ -529,3 +529,128 @@ elif mode == "オリジナル音声即時合成":
                     "id": msg_id,
                 }
             )
+
+
+# =============================================================================
+# モード4: 音声合成WebAPI
+# =============================================================================
+elif mode == "音声合成WebAPI":
+    st.header("音声合成WebAPI")
+    st.markdown(
+        "VOICEVOX互換のHTTP APIサーバーとして利用できます。\n"
+        "以下のコマンドでAPIサーバーを起動し、他のアプリケーションから音声合成を呼び出せます。"
+    )
+
+    st.subheader("サーバー起動コマンド")
+
+    col_cmd1, col_cmd2 = st.columns(2)
+    with col_cmd1:
+        st.code("uv run python api_server.py", language="bash")
+        st.caption("デフォルト: host=127.0.0.1, port=50021, model=1.7B")
+
+    with col_cmd2:
+        st.code(
+            "uv run python api_server.py --host 0.0.0.0 --port 50021 --model-size 0.6B",
+            language="bash",
+        )
+        st.caption("ネットワーク公開 + 0.6Bモデル使用の例")
+
+    st.divider()
+
+    st.subheader("主要APIエンドポイント（VOICEVOX互換）")
+
+    with st.expander("GET /version - バージョン取得", expanded=False):
+        st.code('curl http://127.0.0.1:50021/version', language="bash")
+
+    with st.expander("GET /speakers - 話者（ボイスモデル）一覧", expanded=False):
+        st.code('curl http://127.0.0.1:50021/speakers', language="bash")
+        st.caption(
+            "保存済みボイスモデルが話者として返されます。"
+            "speaker_id は /voice_models で確認できます。"
+        )
+
+    with st.expander(
+        "POST /audio_query + POST /synthesis - 音声合成（2ステップ）", expanded=True
+    ):
+        st.markdown("**ステップ1: AudioQueryを作成**")
+        st.code(
+            'curl -X POST "http://127.0.0.1:50021/audio_query?text=こんにちは&speaker=0"'
+            " > query.json",
+            language="bash",
+        )
+        st.markdown("**ステップ2: 音声合成**")
+        st.code(
+            'curl -X POST "http://127.0.0.1:50021/synthesis?speaker=0"'
+            " -H 'Content-Type: application/json'"
+            " -d @query.json"
+            " --output output.wav",
+            language="bash",
+        )
+
+    st.divider()
+
+    st.subheader("拡張APIエンドポイント")
+
+    with st.expander("POST /voice_models/upload - ボイスモデル作成", expanded=False):
+        st.code(
+            "curl -X POST http://127.0.0.1:50021/voice_models/upload \\\n"
+            '  -F "audio=@reference.wav" \\\n'
+            '  -F "ref_text=こんにちは、はじめまして。" \\\n'
+            '  -F "nickname=myvoice" \\\n'
+            '  -F "language=Japanese"',
+            language="bash",
+        )
+
+    with st.expander(
+        "POST /voice_clone/synthesis - リファレンス音声から直接合成", expanded=False
+    ):
+        st.code(
+            "curl -X POST http://127.0.0.1:50021/voice_clone/synthesis \\\n"
+            '  -F "text=合成するテキスト" \\\n'
+            '  -F "audio=@reference.wav" \\\n'
+            '  -F "ref_text=リファレンス音声の文字起こし" \\\n'
+            '  -F "language=Japanese" \\\n'
+            "  --output output.wav",
+            language="bash",
+        )
+
+    with st.expander("GET /voice_models - ボイスモデル一覧（拡張）", expanded=False):
+        st.code("curl http://127.0.0.1:50021/voice_models", language="bash")
+
+    st.divider()
+
+    st.subheader("APIドキュメント")
+    st.markdown(
+        "サーバー起動後、以下のURLでインタラクティブなAPIドキュメントを参照できます:\n\n"
+        "- **Swagger UI**: http://127.0.0.1:50021/docs\n"
+        "- **ReDoc**: http://127.0.0.1:50021/redoc"
+    )
+
+    st.divider()
+
+    st.subheader("Pythonサンプルコード")
+    st.code(
+        '''import requests
+
+BASE_URL = "http://127.0.0.1:50021"
+
+# ステップ1: AudioQueryを作成
+response = requests.post(
+    f"{BASE_URL}/audio_query",
+    params={"text": "こんにちは", "speaker": 0},
+)
+query = response.json()
+
+# ステップ2: 音声合成
+response = requests.post(
+    f"{BASE_URL}/synthesis",
+    params={"speaker": 0},
+    json=query,
+)
+
+# WAVファイルとして保存
+with open("output.wav", "wb") as f:
+    f.write(response.content)
+''',
+        language="python",
+    )
