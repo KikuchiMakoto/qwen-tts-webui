@@ -191,7 +191,9 @@ uv run python api_server.py --host 0.0.0.0 --port 50021
 
 ```bash
 # ステップ1: AudioQueryを作成
-curl -X POST "http://127.0.0.1:50021/audio_query?text=こんにちは&speaker=0" > query.json
+# 日本語などの非ASCII文字はURLエンコードが必要です
+TEXT=$(python3 -c "import urllib.parse; print(urllib.parse.quote('こんにちは'))")
+curl -X POST "http://127.0.0.1:50021/audio_query?text=${TEXT}&speaker=0" > query.json
 
 # ステップ2: 音声合成
 curl -X POST "http://127.0.0.1:50021/synthesis?speaker=0" \
@@ -205,7 +207,7 @@ import requests
 
 BASE_URL = "http://127.0.0.1:50021"
 
-# ステップ1: AudioQueryを作成
+# ステップ1: AudioQueryを作成（requests は自動的にURLエンコードします）
 query = requests.post(
     f"{BASE_URL}/audio_query",
     params={"text": "こんにちは", "speaker": 0},
