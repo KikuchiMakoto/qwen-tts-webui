@@ -46,6 +46,45 @@ def save_uploaded_audio(uploaded_file) -> str:
         return f.name
 
 
+# 音声学習に使用するリファレンス音声の長さ制約（秒）
+VOICE_LEARNING_MIN_DURATION: float = 3.0
+VOICE_LEARNING_MAX_DURATION: float = 15.0
+
+
+def get_audio_duration(uploaded_file) -> float:
+    """アップロードされた音声ファイルの長さ（秒）を返す。
+
+    Raises:
+        ValueError: 音声ファイルの読み込みに失敗した場合
+    """
+    data = uploaded_file.getvalue()
+    try:
+        with sf.SoundFile(io.BytesIO(data)) as f:
+            return len(f) / f.samplerate
+    except Exception as e:
+        raise ValueError(f"音声ファイルの読み込みに失敗しました: {e}") from e
+
+
+def validate_audio_duration(uploaded_file) -> bool:
+    """音声の長さが学習に適した範囲（3秒〜15秒）かどうかを検証する。
+
+    範囲外または読み込み不可の場合は st.error でエラーを表示し False を返す。
+    """
+    try:
+        duration = get_audio_duration(uploaded_file)
+    except ValueError as e:
+        st.error(str(e))
+        return False
+    if duration < VOICE_LEARNING_MIN_DURATION or duration > VOICE_LEARNING_MAX_DURATION:
+        st.error(
+            f"音声の長さが {duration:.1f} 秒です。"
+            f"音声学習には {VOICE_LEARNING_MIN_DURATION:.0f}秒〜"
+            f"{VOICE_LEARNING_MAX_DURATION:.0f}秒の音声を使用してください。"
+        )
+        return False
+    return True
+
+
 def show_completion_notification(message: str = "完了しました！"):
     """完了通知を表示する（Toast + 音声）."""
     st.toast(message, icon="✅")
@@ -206,6 +245,8 @@ if mode == "オリジナルボイスモデル学習":
                 st.error(
                     "音声ファイル、文字起こし、ニックネームをすべて入力してください。"
                 )
+            elif not validate_audio_duration(audio_file):
+                pass
             else:
                 audio_path = save_uploaded_audio(audio_file)
                 with st.spinner("ボイスモデルを作成中..."):
@@ -222,6 +263,8 @@ if mode == "オリジナルボイスモデル学習":
         if preview_clicked:
             if not audio_file or not ref_text:
                 st.error("音声ファイルと文字起こしを入力してください。")
+            elif not validate_audio_duration(audio_file):
+                pass
             else:
                 audio_path = save_uploaded_audio(audio_file)
                 greeting = GREETINGS.get(ref_lang, GREETINGS["English"])
@@ -482,6 +525,8 @@ elif mode == "オリジナル音声即時合成":
     if text_input := st.chat_input("合成するテキストを入力"):
         if not instant_audio or not instant_ref_text:
             st.error("リファレンス音声と文字起こしを入力してください。")
+        elif not validate_audio_duration(instant_audio):
+            pass
         else:
             # ユーザーメッセージ
             user_msg = {
