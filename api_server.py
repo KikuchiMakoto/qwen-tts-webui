@@ -3,18 +3,20 @@
 起動方法:
     uv run python api_server.py
     # オプション
-    uv run python api_server.py --host 0.0.0.0 --port 50021 --model-size 1.7B
+    uv run python api_server.py --host 0.0.0.0 --port 50021
+
+制約:
+    - モデルは常に 1.7B を使用します（APIからの変更不可）。
+    - ボイスモデルはStreamlitで学習・保存済みの.ptキャッシュのみ使用できます。
 """
 
 import argparse
 import io
-import tempfile
-from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -23,8 +25,6 @@ from voice_store import (
     export_voice,
     list_voices_by_size,
     load_voice,
-    remove_voice,
-    save_voice,
 )
 
 # --- アプリケーション ---
@@ -37,7 +37,9 @@ app = FastAPI(
 
 # グローバルエンジンインスタンス
 _engine: TTSEngine | None = None
-_default_model_size: str = "1.7B"
+
+# APIで使用するモデルサイズ（変更不可 — WebAPIは常に1.7Bを使用）
+API_MODEL_SIZE: str = "1.7B"
 
 # デフォルトサンプリングレート（Qwen3-TTSの出力に合わせた値）
 DEFAULT_SAMPLE_RATE: int = 24000
@@ -62,12 +64,13 @@ def _wav_to_bytes(wav: np.ndarray, sr: int) -> bytes:
     return buf.read()
 
 
-def _speaker_id_to_nickname(speaker_id: int, model_size: str) -> str:
+def _speaker_id_to_nickname(speaker_id: int) -> str:
     """speaker_idをnicknameに変換する。
 
     speaker_idはlist_voices_by_sizeの返り値の0ベースインデックス。
+    常に API_MODEL_SIZE (1.7B) のボイスモデルを参照する。
     """
-    voices = list_voices_by_size(model_size)
+    voices = list_voices_by_size(API_MODEL_SIZE)
     if speaker_id < 0 or speaker_id >= len(voices):
         raise HTTPException(
             status_code=404,
@@ -76,9 +79,9 @@ def _speaker_id_to_nickname(speaker_id: int, model_size: str) -> str:
     return voices[speaker_id]["nickname"]
 
 
-def _build_speaker_list(model_size: str) -> list[dict]:
+def _build_speaker_list() -> list[dict]:
     """保存済みボイスモデルをVOICEVOX形式のspeaker一覧に変換する。"""
-    voices = list_voices_by_size(model_size)
+    voices = list_voices_by_size(API_MODEL_SIZE)
     speakers = []
     for idx, voice in enumerate(voices):
         speakers.append(
@@ -141,7 +144,6 @@ class AudioQuery(BaseModel):
     Qwen3-TTS拡張フィールド:
         text: 合成テキスト
         language: 出力言語
-        model_size: モデルサイズ
         temperature: 感情値
         repetition_penalty: 繰り返し抑制係数
         top_p: 核サンプリング確率閾値
@@ -160,7 +162,6 @@ class AudioQuery(BaseModel):
     # Qwen3-TTS 拡張フィールド
     text: str = ""
     language: str = "Japanese"
-    model_size: str = "1.7B"
     temperature: float = 0.65
     repetition_penalty: float = 1.15
     top_p: float = 0.9
@@ -195,15 +196,6 @@ class SpeakerInfo(BaseModel):
     style_infos: list[dict] = Field(default_factory=list)
 
 
-class VoiceCreateResponse(BaseModel):
-    """ボイス作成レスポンス."""
-
-    speaker_id: int
-    nickname: str
-    language: str
-    model_size: str
-
-
 # --- API エンドポイント ---
 
 
@@ -226,30 +218,20 @@ async def get_supported_devices() -> dict:
 
 
 @app.get("/speakers", response_model=list[Speaker], tags=["Speaker"])
-async def get_speakers(
-    model_size: str = Query(default=None, description="モデルサイズ (1.7B または 0.6B)"),
-) -> list[dict]:
+async def get_speakers() -> list[dict]:
     """保存済みボイスモデルの一覧を返す。
 
-    model_sizeを省略した場合はデフォルトモデルサイズを使用する。
+    モデルサイズは常に 1.7B を使用します。
     """
-    size = model_size or _default_model_size
-    if size not in ("1.7B", "0.6B"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"無効なモデルサイズ: {size}。1.7B または 0.6B を指定してください。",
-        )
-    return _build_speaker_list(size)
+    return _build_speaker_list()
 
 
 @app.get("/speaker_info", response_model=SpeakerInfo, tags=["Speaker"])
 async def get_speaker_info(
     speaker_uuid: str = Query(..., description="話者UUID"),
-    model_size: str = Query(default=None, description="モデルサイズ"),
 ) -> dict:
     """話者の詳細情報を返す。"""
-    size = model_size or _default_model_size
-    voices = list_voices_by_size(size)
+    voices = list_voices_by_size(API_MODEL_SIZE)
     # speaker_uuidから話者を検索
     for idx, voice in enumerate(voices):
         if f"qwen-tts-{voice['nickname']}" == speaker_uuid:
@@ -281,7 +263,6 @@ async def get_supported_languages() -> list[str]:
 async def create_audio_query(
     text: str = Query(..., description="合成するテキスト"),
     speaker: int = Query(..., description="話者ID"),
-    model_size: str = Query(default=None, description="モデルサイズ (1.7B または 0.6B)"),
     language: str = Query(default=None, description="出力言語"),
     temperature: float = Query(default=0.65, description="感情値"),
     repetition_penalty: float = Query(default=1.15, description="繰り返し抑制係数"),
@@ -291,19 +272,14 @@ async def create_audio_query(
     """音声合成クエリを作成する。
 
     synthesisエンドポイントに渡すAudioQueryオブジェクトを返す。
+    モデルは常に 1.7B を使用します。
     """
-    size = model_size or _default_model_size
-    if size not in ("1.7B", "0.6B"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"無効なモデルサイズ: {size}。1.7B または 0.6B を指定してください。",
-        )
     # 話者IDの検証
-    _speaker_id_to_nickname(speaker, size)
+    _speaker_id_to_nickname(speaker)
 
     # 言語の決定（省略時は話者の設定言語を使用）
     if language is None:
-        voices = list_voices_by_size(size)
+        voices = list_voices_by_size(API_MODEL_SIZE)
         lang = voices[speaker]["language"]
     else:
         if language not in SUPPORTED_LANGUAGES:
@@ -317,7 +293,6 @@ async def create_audio_query(
     return AudioQuery(
         text=text,
         language=lang,
-        model_size=size,
         temperature=temperature,
         repetition_penalty=repetition_penalty,
         top_p=top_p,
@@ -329,7 +304,6 @@ async def create_audio_query(
 async def synthesis(
     query: AudioQuery,
     speaker: int = Query(..., description="話者ID"),
-    model_size: str = Query(default=None, description="モデルサイズ (1.7B または 0.6B)"),
     enable_interrogative_upspeak: bool = Query(
         default=True, description="疑問文の語尾を上げる（現在未使用）"
     ),
@@ -337,19 +311,14 @@ async def synthesis(
     """音声合成を実行してWAVファイルを返す。
 
     audio_queryで作成したAudioQueryをボディに渡してください。
+    モデルは常に 1.7B を使用します。
     """
-    size = model_size or query.model_size or _default_model_size
-    if size not in ("1.7B", "0.6B"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"無効なモデルサイズ: {size}。1.7B または 0.6B を指定してください。",
-        )
-    nickname = _speaker_id_to_nickname(speaker, size)
+    nickname = _speaker_id_to_nickname(speaker)
     if not query.text:
         raise HTTPException(status_code=400, detail="テキストが空です。")
 
     try:
-        voice_prompt = load_voice(nickname, size)
+        voice_prompt = load_voice(nickname, API_MODEL_SIZE)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
@@ -359,7 +328,7 @@ async def synthesis(
             text=query.text,
             language=query.language,
             voice_clone_prompt=voice_prompt,
-            model_size=size,
+            model_size=API_MODEL_SIZE,
             temperature=query.temperature,
             repetition_penalty=query.repetition_penalty,
             top_p=query.top_p,
@@ -378,19 +347,15 @@ async def synthesis(
 async def multi_synthesis(
     queries: list[AudioQuery],
     speaker: int = Query(..., description="話者ID"),
-    model_size: str = Query(default=None, description="モデルサイズ"),
 ) -> Response:
-    """複数のAudioQueryを連結して音声合成し、1つのWAVファイルを返す。"""
-    size = model_size or _default_model_size
-    if size not in ("1.7B", "0.6B"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"無効なモデルサイズ: {size}。1.7B または 0.6B を指定してください。",
-        )
-    nickname = _speaker_id_to_nickname(speaker, size)
+    """複数のAudioQueryを連結して音声合成し、1つのWAVファイルを返す。
+
+    モデルは常に 1.7B を使用します。
+    """
+    nickname = _speaker_id_to_nickname(speaker)
 
     try:
-        voice_prompt = load_voice(nickname, size)
+        voice_prompt = load_voice(nickname, API_MODEL_SIZE)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
@@ -407,7 +372,7 @@ async def multi_synthesis(
                 text=query.text,
                 language=query.language,
                 voice_clone_prompt=voice_prompt,
-                model_size=size,
+                model_size=API_MODEL_SIZE,
                 temperature=query.temperature,
                 repetition_penalty=query.repetition_penalty,
                 top_p=query.top_p,
@@ -451,12 +416,12 @@ async def connect_waves(waves: list[bytes]) -> Response:
 
 
 @app.get("/voice_models", tags=["VoiceModel"])
-async def get_voice_models(
-    model_size: str = Query(default=None, description="モデルサイズ"),
-) -> list[dict]:
-    """保存済みボイスモデルの一覧を返す（拡張API）。"""
-    size = model_size or _default_model_size
-    voices = list_voices_by_size(size)
+async def get_voice_models() -> list[dict]:
+    """保存済みボイスモデルの一覧を返す（拡張API）。
+
+    Streamlitで学習・保存済みの 1.7B ボイスモデルを返します。
+    """
+    voices = list_voices_by_size(API_MODEL_SIZE)
     result = []
     for idx, voice in enumerate(voices):
         result.append(
@@ -471,88 +436,13 @@ async def get_voice_models(
     return result
 
 
-@app.post("/voice_models/upload", response_model=VoiceCreateResponse, tags=["VoiceModel"])
-async def upload_voice_model(
-    audio: UploadFile = File(..., description="リファレンス音声ファイル"),
-    ref_text: str = Form(..., description="リファレンス音声の文字起こし"),
-    nickname: str = Form(..., description="ボイスモデルのニックネーム"),
-    language: str = Form(default="Japanese", description="リファレンス音声の言語"),
-    model_size: str = Form(default=None, description="モデルサイズ"),
-) -> VoiceCreateResponse:
-    """リファレンス音声からボイスモデルを作成・保存する（拡張API）。"""
-    size = model_size or _default_model_size
-    if size not in ("1.7B", "0.6B"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"無効なモデルサイズ: {size}。1.7B または 0.6B を指定してください。",
-        )
-    if language not in SUPPORTED_LANGUAGES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"サポートされていない言語: {language}。"
-            f"サポート言語: {', '.join(SUPPORTED_LANGUAGES)}",
-        )
-    if not nickname.strip():
-        raise HTTPException(status_code=400, detail="ニックネームを入力してください。")
-
-    suffix = Path(audio.filename or "audio.wav").suffix
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
-        f.write(await audio.read())
-        audio_path = f.name
-
-    engine = get_engine()
-    try:
-        prompt_items = engine.create_voice_prompt(
-            ref_audio=audio_path,
-            ref_text=ref_text,
-            model_size=size,
-        )
-        save_voice(nickname, prompt_items, language, size)
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"ボイスモデルの作成に失敗しました: {e}"
-        ) from e
-    finally:
-        Path(audio_path).unlink(missing_ok=True)
-
-    voices = list_voices_by_size(size)
-    speaker_id = next(
-        (i for i, v in enumerate(voices) if v["nickname"] == nickname), 0
-    )
-    return VoiceCreateResponse(
-        speaker_id=speaker_id,
-        nickname=nickname,
-        language=language,
-        model_size=size,
-    )
-
-
-@app.delete("/voice_models/{nickname}", tags=["VoiceModel"])
-async def delete_voice_model(
-    nickname: str,
-    model_size: str = Query(default=None, description="モデルサイズ"),
-) -> dict:
-    """ボイスモデルを削除する（拡張API）。"""
-    size = model_size or _default_model_size
-    voices = list_voices_by_size(size)
-    if not any(v["nickname"] == nickname for v in voices):
-        raise HTTPException(
-            status_code=404,
-            detail=f"ボイスモデル '{nickname}' が見つかりません（{size}）。",
-        )
-    remove_voice(nickname, size)
-    return {"deleted": nickname, "model_size": size}
-
-
 @app.get("/voice_models/{nickname}/export", tags=["VoiceModel"])
 async def export_voice_model(
     nickname: str,
-    model_size: str = Query(default=None, description="モデルサイズ"),
 ) -> Response:
     """ボイスモデルをダウンロードする（拡張API）。"""
-    size = model_size or _default_model_size
     try:
-        data, filename = export_voice(nickname, size)
+        data, filename = export_voice(nickname, API_MODEL_SIZE)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
 
@@ -563,71 +453,11 @@ async def export_voice_model(
     )
 
 
-@app.post(
-    "/voice_clone/synthesis",
-    tags=["VoiceClone"],
-)
-async def voice_clone_synthesis(
-    text: str = Form(..., description="合成するテキスト"),
-    audio: UploadFile = File(..., description="リファレンス音声ファイル"),
-    ref_text: str = Form(..., description="リファレンス音声の文字起こし"),
-    language: str = Form(default="Japanese", description="出力言語"),
-    model_size: str = Form(default=None, description="モデルサイズ"),
-    temperature: float = Form(default=0.65, description="感情値"),
-    repetition_penalty: float = Form(default=1.15, description="繰り返し抑制係数"),
-    top_p: float = Form(default=0.9, description="核サンプリング確率閾値"),
-    top_k: int = Form(default=50, description="サンプリング候補数"),
-) -> Response:
-    """リファレンス音声から直接音声合成を行う（ボイスモデル保存なし）（拡張API）。"""
-    size = model_size or _default_model_size
-    if size not in ("1.7B", "0.6B"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"無効なモデルサイズ: {size}。1.7B または 0.6B を指定してください。",
-        )
-    if language not in SUPPORTED_LANGUAGES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"サポートされていない言語: {language}。"
-            f"サポート言語: {', '.join(SUPPORTED_LANGUAGES)}",
-        )
-
-    suffix = Path(audio.filename or "audio.wav").suffix
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as f:
-        f.write(await audio.read())
-        audio_path = f.name
-
-    engine = get_engine()
-    try:
-        wav, sr = engine.generate_speech_direct(
-            text=text,
-            language=language,
-            ref_audio=audio_path,
-            ref_text=ref_text,
-            model_size=size,
-            temperature=temperature,
-            repetition_penalty=repetition_penalty,
-            top_p=top_p,
-            top_k=top_k,
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"音声合成に失敗しました: {e}"
-        ) from e
-    finally:
-        Path(audio_path).unlink(missing_ok=True)
-
-    audio_bytes = _wav_to_bytes(wav, sr)
-    return Response(content=audio_bytes, media_type="audio/wav")
-
-
 # --- エントリポイント ---
 
 
 def main():
     """APIサーバーを起動する。"""
-    global _default_model_size
-
     parser = argparse.ArgumentParser(
         description="Qwen3-TTS Web APIサーバー (VOICEVOX互換)"
     )
@@ -642,20 +472,12 @@ def main():
         default=50021,
         help="バインドするポート (デフォルト: 50021)",
     )
-    parser.add_argument(
-        "--model-size",
-        default="1.7B",
-        choices=["1.7B", "0.6B"],
-        help="使用するモデルサイズ (デフォルト: 1.7B)",
-    )
     args = parser.parse_args()
-
-    _default_model_size = args.model_size
 
     print("Qwen3-TTS Web API サーバーを起動します")
     print(f"  ホスト: {args.host}")
     print(f"  ポート: {args.port}")
-    print(f"  モデルサイズ: {args.model_size}")
+    print(f"  モデルサイズ: {API_MODEL_SIZE}（固定）")
     print(f"  API ドキュメント: http://{args.host}:{args.port}/docs")
     print(f"  ReDoc: http://{args.host}:{args.port}/redoc")
 

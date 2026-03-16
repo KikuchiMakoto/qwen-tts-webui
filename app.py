@@ -546,14 +546,16 @@ elif mode == "音声合成WebAPI":
     col_cmd1, col_cmd2 = st.columns(2)
     with col_cmd1:
         st.code("uv run python api_server.py", language="bash")
-        st.caption("デフォルト: host=127.0.0.1, port=50021, model=1.7B")
+        st.caption("デフォルト: host=127.0.0.1, port=50021")
 
     with col_cmd2:
         st.code(
-            "uv run python api_server.py --host 0.0.0.0 --port 50021 --model-size 0.6B",
+            "uv run python api_server.py --host 0.0.0.0 --port 50021",
             language="bash",
         )
-        st.caption("ネットワーク公開 + 0.6Bモデル使用の例")
+        st.caption("ネットワーク公開の例")
+
+    st.info("モデルは常に **1.7B** を使用します。ボイスモデルはこのWebUIで学習・保存済みのものを使用します。")
 
     st.divider()
 
@@ -590,29 +592,6 @@ elif mode == "音声合成WebAPI":
     st.divider()
 
     st.subheader("拡張APIエンドポイント")
-
-    with st.expander("POST /voice_models/upload - ボイスモデル作成", expanded=False):
-        st.code(
-            "curl -X POST http://127.0.0.1:50021/voice_models/upload \\\n"
-            '  -F "audio=@reference.wav" \\\n'
-            '  -F "ref_text=こんにちは、はじめまして。" \\\n'
-            '  -F "nickname=myvoice" \\\n'
-            '  -F "language=Japanese"',
-            language="bash",
-        )
-
-    with st.expander(
-        "POST /voice_clone/synthesis - リファレンス音声から直接合成", expanded=False
-    ):
-        st.code(
-            "curl -X POST http://127.0.0.1:50021/voice_clone/synthesis \\\n"
-            '  -F "text=合成するテキスト" \\\n'
-            '  -F "audio=@reference.wav" \\\n'
-            '  -F "ref_text=リファレンス音声の文字起こし" \\\n'
-            '  -F "language=Japanese" \\\n'
-            "  --output output.wav",
-            language="bash",
-        )
 
     with st.expander("GET /voice_models - ボイスモデル一覧（拡張）", expanded=False):
         st.code("curl http://127.0.0.1:50021/voice_models", language="bash")
