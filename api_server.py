@@ -27,6 +27,9 @@ from voice_store import (
     load_voice,
 )
 
+# 言語自動検出を表すセンチネル値（ボイスモデルの登録言語を使用）
+LANGUAGE_AUTO: str = "Auto"
+
 # --- アプリケーション ---
 
 app = FastAPI(
@@ -77,6 +80,26 @@ def _speaker_id_to_nickname(speaker_id: int) -> str:
             detail=f"話者ID {speaker_id} が見つかりません。",
         )
     return voices[speaker_id]["nickname"]
+
+
+def _resolve_language(language: str, nickname: str) -> str:
+    """LANGUAGE_AUTO の場合は保存済みボイスモデルの言語を返す。
+
+    Args:
+        language: AudioQuery の language フィールド
+        nickname: ボイスモデルのニックネーム
+
+    Returns:
+        実際に使用する言語文字列
+    """
+    if language != LANGUAGE_AUTO:
+        return language
+    voices = list_voices_by_size(API_MODEL_SIZE)
+    for voice in voices:
+        if voice["nickname"] == nickname:
+            return voice["language"]
+    # フォールバック: 見つからない場合は最初のサポート言語を使用
+    return SUPPORTED_LANGUAGES[0]
 
 
 def _build_speaker_list() -> list[dict]:
@@ -161,7 +184,7 @@ class AudioQuery(BaseModel):
     output_stereo: bool = False
     # Qwen3-TTS 拡張フィールド
     text: str = ""
-    language: str = "Japanese"
+    language: str = LANGUAGE_AUTO
     temperature: float = 0.65
     repetition_penalty: float = 1.15
     top_p: float = 0.9
@@ -255,8 +278,8 @@ async def get_speaker_info(
 
 @app.get("/supported_languages", tags=["System"])
 async def get_supported_languages() -> list[str]:
-    """サポートされている言語の一覧を返す。"""
-    return SUPPORTED_LANGUAGES
+    """サポートされている言語の一覧を返す。Auto は自動検出を意味する。"""
+    return [LANGUAGE_AUTO] + SUPPORTED_LANGUAGES
 
 
 @app.post("/audio_query", response_model=AudioQuery, tags=["Synthesis"])
@@ -277,16 +300,17 @@ async def create_audio_query(
     # 話者IDの検証
     _speaker_id_to_nickname(speaker)
 
-    # 言語の決定（省略時は話者の設定言語を使用）
+    # 言語の決定（省略時は Auto）
     if language is None:
-        voices = list_voices_by_size(API_MODEL_SIZE)
-        lang = voices[speaker]["language"]
+        lang = LANGUAGE_AUTO
+    elif language == LANGUAGE_AUTO:
+        lang = LANGUAGE_AUTO
     else:
         if language not in SUPPORTED_LANGUAGES:
             raise HTTPException(
                 status_code=400,
                 detail=f"サポートされていない言語: {language}。"
-                f"サポート言語: {', '.join(SUPPORTED_LANGUAGES)}",
+                f"サポート言語: {', '.join([LANGUAGE_AUTO] + SUPPORTED_LANGUAGES)}",
             )
         lang = language
 
@@ -326,7 +350,7 @@ async def synthesis(
     try:
         wav, sr = engine.generate_speech(
             text=query.text,
-            language=query.language,
+            language=_resolve_language(query.language, nickname),
             voice_clone_prompt=voice_prompt,
             model_size=API_MODEL_SIZE,
             temperature=query.temperature,
@@ -370,7 +394,7 @@ async def multi_synthesis(
         try:
             wav, sr = engine.generate_speech(
                 text=query.text,
-                language=query.language,
+                language=_resolve_language(query.language, nickname),
                 voice_clone_prompt=voice_prompt,
                 model_size=API_MODEL_SIZE,
                 temperature=query.temperature,
